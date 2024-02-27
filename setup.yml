@@ -1,0 +1,67 @@
+---
+- name: Install and configure Hadoop on a cluster
+  hosts: hadoop_cluster
+  become: yes
+  tasks:
+    - name: Install Java
+      dnf:
+        name: java-11-openjdk.x86_64
+        state: present
+      tags: java
+
+    - name: Set JAVA_HOME environment variable
+      blockinfile:
+        path: /etc/profile.d/java_home.sh
+        block: |
+          export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.402.b06-2.el8.x86_64
+          export PATH=$JAVA_HOME/bin:$PATH
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+      tags: java
+
+    - name: Install wget (ensure it's present for downloading Hadoop)
+      dnf:
+        name: wget
+        state: present
+      tags: install-wget
+
+    - name: Download Hadoop using wget
+      shell: wget -O /tmp/hadoop-3.3.6.tar.gz https://dlcdn.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz
+      args:
+        creates: /tmp/hadoop-3.3.6.tar.gz
+      tags: hadoop-download
+
+    - name: Extract Hadoop
+      unarchive:
+        src: "/tmp/hadoop-3.3.6.tar.gz"
+        dest: "/opt"
+        creates: "/opt/hadoop-3.3.6" # This ensures the task is idempotent
+        remote_src: yes
+      tags: hadoop-extract
+
+    - name: Set Hadoop environment variables
+      blockinfile:
+        path: "/etc/profile.d/hadoop.sh" # It's better to use a custom file in /etc/profile.d
+        block: |
+          export HADOOP_HOME=/opt/hadoop-3.3.6
+          export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+      tags: environment
+
+    - name: Update Hadoop configuration to use 4GB RAM and 1 CPU
+      vars:
+        HADOOP_HOME: /opt/hadoop-3.3.6
+      copy:
+        dest: "{{ HADOOP_HOME }}/etc/hadoop/{{ item.dest }}"
+        content: "{{ lookup('template', item.src) }}"
+      loop:
+        - { src: 'hdfs-site.xml.j2', dest: 'hdfs-site.xml' }
+        - { src: 'core-site.xml.j2', dest: 'core-site.xml' }
+        - { src: 'hadoop-env.sh', dest: 'hadoop-env.sh'}
+      tags: hadoop-config
+
